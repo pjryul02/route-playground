@@ -1,0 +1,32 @@
+[
+    {
+        "name": "vroom-distribute",
+        "description": "VROOM Direct (OSRM)",
+        "url": "http://localhost:8000/distribute",
+        "type": "proxy"
+    },
+    {
+        "name": "vroom-optimize",
+        "description": "VROOM Optimize (Full)",
+        "url": "http://localhost:8000/optimize",
+        "type": "proxy"
+    },
+    {
+        "name": "vroom-optimize-basic",
+        "description": "VROOM Optimize (Basic)",
+        "url": "http://localhost:8000/optimize/basic",
+        "type": "proxy"
+    },
+    {
+        "name": "vroom-optimize-premium",
+        "description": "VROOM Optimize (Premium)",
+        "url": "http://localhost:8000/optimize/premium",
+        "type": "proxy"
+    },
+    {
+        "name": "ortools-local",
+        "description": "OR-Tools (Euclidean)",
+        "url": "embedded",
+        "type": "proxy"
+    }
+]

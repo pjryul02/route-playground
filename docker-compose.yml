@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "8080:8080"
+    environment:
+      # Docker 내부 네트워크: wrapper 컨테이너명으로 연결
+      - WRAPPER_BASE_URL=http://vroom-wrapper-v3:8000
+      - WRAPPER_API_KEY=demo-key-12345
+      - DEBUG=true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./src:/app/src
+    command: ["python", "main.py"]
+    networks:
+      - playground-net
+      - routing-net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3030:3030"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8080
+    volumes:
+      - ./frontend/src:/app/src
+    command: ["npm", "start"]
+    networks:
+      - playground-net
+
+networks:
+  playground-net:
+    driver: bridge
+  routing-net:
+    external: true
