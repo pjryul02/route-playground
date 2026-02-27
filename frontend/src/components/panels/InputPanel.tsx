@@ -167,8 +167,27 @@ const InputPanel: React.FC<InputPanelProps> = ({
           />
           Use Async Processing
         </label>
-        <div style={{ fontSize: '12px', color: '#666', marginTop: '5px' }}>
-          When enabled, requests are processed asynchronously with 1-second polling for results.
+        <div style={{ fontSize: '12px', color: '#666', marginTop: '5px', lineHeight: '1.6' }}>
+          {useAsync ? (
+            <div style={{
+              padding: '8px 10px',
+              backgroundColor: '#e8f5e9',
+              border: '1px solid #c8e6c9',
+              borderRadius: '4px',
+              marginTop: '4px'
+            }}>
+              <div style={{ fontWeight: 'bold', marginBottom: '4px', color: '#2e7d32' }}>Async 모드 ON</div>
+              <div><strong>동작:</strong> 요청 즉시 Job ID 반환 → 1초 간격 폴링 → 완료 시 결과 표시</div>
+              <div><strong>용도:</strong> 대규모 요청 (50+ jobs, 10+ vehicles) 또는 타임아웃이 긴 경우</div>
+              <div><strong>모니터링:</strong> 아래 Job Status 패널에서 상태 실시간 확인</div>
+              <div style={{ marginTop: '4px', color: '#555' }}>
+                <strong>vs Sync:</strong> 동기 모드는 응답 올 때까지 대기. 비동기는 백그라운드 처리 후 폴링으로 수신.
+                결과는 동일하며, 브라우저 타임아웃 방지에 유리함.
+              </div>
+            </div>
+          ) : (
+            <span>대규모 요청 시 브라우저 타임아웃 방지를 위해 비동기 처리를 사용합니다.</span>
+          )}
         </div>
       </div>
 
@@ -180,11 +199,20 @@ const InputPanel: React.FC<InputPanelProps> = ({
           borderRadius: '4px',
           marginBottom: '10px'
         }}>
-          <div><strong>Job Status:</strong> {currentJob.status}</div>
-          <div><strong>Job ID:</strong> {currentJob.id}</div>
+          <div><strong>Job Status:</strong> <span style={{
+            padding: '2px 8px',
+            borderRadius: '3px',
+            fontSize: '12px',
+            fontWeight: 'bold',
+            backgroundColor: currentJob.status === 'completed' ? '#c8e6c9' :
+                           currentJob.status === 'failed' ? '#ffcdd2' : '#bbdefb',
+            color: currentJob.status === 'completed' ? '#2e7d32' :
+                   currentJob.status === 'failed' ? '#c62828' : '#1565c0'
+          }}>{currentJob.status?.toUpperCase()}</span></div>
+          <div style={{ marginTop: '4px' }}><strong>Job ID:</strong> <code style={{ fontSize: '11px' }}>{currentJob.id}</code></div>
           {currentJob.status === 'processing' && (
             <div style={{ marginTop: '5px', fontSize: '12px', color: '#666' }}>
-              Processing... Please wait while the server handles your request.
+              백그라운드 처리 중... 1초 간격으로 상태를 확인합니다.
             </div>
           )}
         </div>

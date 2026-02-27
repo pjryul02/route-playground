@@ -310,14 +310,82 @@
 | 상세 통계 | - | - | O | O |
 | 2-Pass 최적화 | - | - | - | O |
 | 다중 시나리오 비교 | - | - | - | O |
+| Map Matching (GPS 보정) | - | - | - | - |
+
+> **참고**: Map Matching은 최적화 파이프라인과 별도의 기능으로, 별도 엔드포인트(`/map-matching/match`)를 통해 제공됩니다.
+
+---
+
+## Map Matching (GPS 궤적 보정)
+
+플레이그라운드 상단 "Map Matching" 탭에서 GPS 궤적을 도로에 보정할 수 있습니다.
+
+### 흐름
+
+1. 프론트엔드 → 플레이그라운드 백엔드 `POST /map-matching/match`
+2. 백엔드 → VROOM Wrapper `POST /map-matching/match` (API Key 없이 직접 전달)
+3. Wrapper → OSRM Match/Route/Nearest API로 보정 수행
+4. 결과 반환: `[[lon, lat, timestamp, flag], ...]`
+
+### 입력 형식
+
+```json
+{
+  "trajectory": [
+    [경도, 위도, 타임스탬프(unix초), 정확도(미터), 속도(m/s)],
+    [127.027, 37.498, 1700000000, 10, 5],
+    ...
+  ]
+}
+```
+
+### 플래그 의미
+
+| 플래그 | 의미 |
+|--------|------|
+| 0.5 | 보정된 포인트 (도로에 스냅) |
+| 1.0 | 원본 유지 (보정 불필요) |
+| 2.0 | 생성된 포인트 (도로 따라가는 중간점) |
+| 2.5 | 보간된 포인트 |
+| 4.0 | 도로 점프 감지 |
+
+### curl 테스트
+
+```bash
+curl -X POST http://localhost:8000/map-matching/match \
+  -H "X-API-Key: demo-key-12345" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "trajectory": [
+      [127.027, 37.498, 1700000000, 5, 5],
+      [127.028, 37.499, 1700000010, 80, 8],
+      [127.030, 37.501, 1700000030, 120, 9],
+      [127.032, 37.503, 1700000050, 10, 12]
+    ]
+  }'
+```
+
+### 헬스 체크
+
+```bash
+curl http://localhost:8000/map-matching/health
+```
 
 ---
 
 ## Docker 실행 방법
 
+### 0. Docker 네트워크 생성 (최초 1회)
+
+```bash
+# 네트워크 생성 (최초 1회)
+docker network create routing-net
+```
+
 ### 1. VROOM Wrapper 실행 (먼저)
 
 ```bash
+# VROOM Wrapper 실행
 cd ~/vroom-wrapper-project
 docker compose -f docker-compose.v3.yml up -d
 ```
@@ -332,7 +400,8 @@ curl http://localhost:8000/health
 ### 2. Route Playground 실행
 
 ```bash
-cd /mnt/d/Projects/RoutePlayground-main/RoutePlayground-main
+# Route Playground 실행
+cd /path/to/RoutePlayground
 docker-compose up -d
 ```
 
@@ -390,3 +459,12 @@ curl -X POST http://localhost:8000/optimize \
 | 401 Unauthorized | API Key 누락 (직접 curl 호출 시) | `/optimize` 계열은 `X-API-Key: demo-key-12345` 헤더 필요. 플레이그라운드에서는 자동 주입 |
 | distance: null | VROOM이 OSRM 없이 실행됨 | OSRM 컨테이너 상태 확인: `curl http://localhost:5000/health` |
 | 503 Service Unavailable | OSRM 데이터 로딩 중 | OSRM 시작 후 30초~1분 대기 (한국 전체 도로망 로딩) |
+| Map Matching 404 | Wrapper에 맵매칭 모듈 없음 | Wrapper v3.0 최신 버전으로 업데이트 (dc1f72f 이후) |
+| Map Matching 타임아웃 | 궤적 포인트가 너무 많음 | 1000개 이하로 분할하여 요청 |
+
+---
+
+## 변경 이력
+
+- 2025-02-25: 초기 작성 — VROOM Wrapper v3.0 통합 구조, 서버별 응답 차이, curl 예시
+- 2025-02-27: Map Matching 섹션 추가, 트러블슈팅 보강

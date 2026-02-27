@@ -1,4 +1,4 @@
-# 🚗 Route Playground
+# Route Playground
 
 차량 경로 문제(VRP, Vehicle Routing Problem)를 해결하고 **지도 위에 시각화**하는 풀스택 웹 애플리케이션입니다.
 
@@ -6,7 +6,7 @@
 
 ---
 
-## ✨ 주요 기능
+## 주요 기능
 
 | 기능 | 설명 |
 |---|---|
@@ -19,7 +19,18 @@
 
 ---
 
-## 🚀 빠른 시작 (Quick Start)
+## 사전 요구 사항 (Prerequisites)
+
+| 항목 | 설명 |
+|---|---|
+| **VROOM Wrapper v3.0** | OSRM, VROOM 바이너리, Redis를 포함하는 별도 프로젝트. 먼저 실행되어 있어야 합니다. |
+| **Docker 네트워크** | `docker network create routing-net` 으로 공유 네트워크를 생성합니다. |
+
+> 자세한 설정 방법은 `INTEGRATION_GUIDE.md`를 참고하세요.
+
+---
+
+## 빠른 시작 (Quick Start)
 
 ### Docker 사용 (권장)
 
@@ -31,9 +42,8 @@ docker-compose up
 |---|---|---|
 | 프론트엔드 | http://localhost:3030 | 웹 UI |
 | 백엔드 API | http://localhost:8080 | FastAPI 서버 |
-| VROOM | http://localhost:3000 | 로컬 VROOM 엔진 (내부 전용) |
 
-> **참고**: VROOM이 실제 경로(도로 기반)를 계산하려면 OSRM 서버가 필요합니다. 현재 `docker-compose.yml`에는 OSRM 서비스가 포함되어 있지 않으므로, 필요 시 별도로 추가해야 합니다.
+> **참고**: 이 프로젝트는 자체 VROOM을 포함하지 않습니다. `routing-net` Docker 네트워크를 통해 VROOM Wrapper v3.0에 연결됩니다. Wrapper가 별도로 실행 중이어야 합니다 (`INTEGRATION_GUIDE.md` 참고).
 
 ### 로컬 개발 환경
 
@@ -61,7 +71,7 @@ npm start
 
 ---
 
-## 🏗️ 프로젝트 구조
+## 프로젝트 구조
 
 ```
 RoutePlayground/
@@ -70,7 +80,7 @@ RoutePlayground/
 ├── docker-compose.yml               # Docker 전체 서비스 구성
 ├── requirements.txt                 # Python 의존성
 │
-├── src/                             # 🐍 백엔드 (Python / FastAPI)
+├── src/                             # 백엔드 (Python / FastAPI)
 │   ├── api/
 │   │   └── routes.py                #   API 엔드포인트 정의
 │   ├── engines/
@@ -87,17 +97,19 @@ RoutePlayground/
 │   └── utils/
 │       └── config.py                #   환경변수 기반 설정 (서버 URL 등)
 │
-└── frontend/                        # ⚛️ 프론트엔드 (React / TypeScript)
+└── frontend/                        # 프론트엔드 (React / TypeScript)
     ├── src/
     │   ├── config/
-    │   │   └── servers.json         #   📋 서버 목록 설정 (여기만 수정!)
+    │   │   └── servers.json         #   서버 목록 설정 (여기만 수정!)
     │   ├── components/
     │   │   ├── MapComponent.tsx      #   Leaflet 지도 + 경로 시각화
+    │   │   ├── panels/
+    │   │   │   └── InputPanel.tsx    #   입력 패널 (비동기 처리 포함)
     │   │   ├── JsonPanel.tsx         #   JSON 입력/출력 패널
     │   │   ├── RouteList.tsx         #   경로 목록 + 상세 정보
     │   │   ├── MapMatchingPanel.tsx  #   Map Matching 탭
     │   │   └── SpreadsheetEditor.tsx #   스프레드시트 뷰
-    │   ├── hooks/                   #   Custom React Hooks
+    │   ├── hooks/                   #   Custom React Hooks (useRouting 등)
     │   ├── services/
     │   │   └── api.ts               #   백엔드/엔진 API 호출
     │   ├── utils/
@@ -110,9 +122,11 @@ RoutePlayground/
     └── package.json
 ```
 
+> **참고**: 기존 `ControlPanel.tsx`는 `panels/InputPanel.tsx`로 리팩토링되었습니다.
+
 ---
 
-## 🔌 서버(엔진) 관리
+## 서버(엔진) 관리
 
 ### 프론트엔드에서 직접 호출하는 서버 추가/수정
 
@@ -127,8 +141,8 @@ RoutePlayground/
 }
 ```
 
-- `type: "direct"` — 프론트엔드에서 엔진 서버로 직접 HTTP 요청
-- `type: "proxy"` — 백엔드(`/solve/{name}`)를 경유하여 요청
+- `type: "direct"` -- 프론트엔드에서 엔진 서버로 직접 HTTP 요청
+- `type: "proxy"` -- 백엔드(`/solve/{name}`)를 경유하여 요청
 
 > **코드 변경 없이 JSON 파일만 수정하면 드롭다운에 자동 반영**됩니다.
 
@@ -141,6 +155,7 @@ RoutePlayground/
 ROOUTY_URL=https://my-custom-vroom.com/distribute
 VROOM_LOCAL_URL=http://my-vroom:3000/
 MAP_MATCHING_URL=http://my-matcher:8100/map-matching/match
+WRAPPER_BASE_URL=http://vroom-wrapper:8100
 
 # API 서버 설정
 API_HOST=0.0.0.0
@@ -148,9 +163,11 @@ API_PORT=8080
 DEBUG=false
 ```
 
+> 백엔드 URL은 `src/utils/config.py`에서 `WRAPPER_BASE_URL` 등의 환경변수로 오버라이드할 수 있습니다.
+
 ---
 
-## 📡 API 엔드포인트
+## API 엔드포인트
 
 | Method | Endpoint | 설명 |
 |---|---|---|
@@ -176,20 +193,20 @@ curl -X POST "http://localhost:8080/solve/roouty?timeout=600&async=true" \
 
 ---
 
-## 🖥️ 사용 방법
+## 사용 방법
 
 1. **서버 선택**: 좌측 패널 상단 드롭다운에서 사용할 엔진 서버를 선택합니다.
 2. **데이터 입력**: JSON 에디터에 차량(`vehicles`)과 작업(`jobs`) 데이터를 입력하거나, "Load Sample" 버튼으로 샘플을 로드합니다.
 3. **경로 계산**: "Solve" 버튼을 클릭하면 선택된 엔진이 최적 경로를 계산합니다.
-4. **결과 확인**: 
-   - 🗺️ **지도**: 우측 지도에 경로가 색상별로 표시됩니다.
-   - 📋 **경로 목록**: 중간 패널에서 차량별 경로 상세 정보를 확인합니다.
-   - 📊 **Output JSON**: 원본 응답 JSON을 확인하고 Excel로 내보낼 수 있습니다.
+4. **결과 확인**:
+   - **지도**: 우측 지도에 경로가 색상별로 표시됩니다.
+   - **경로 목록**: 중간 패널에서 차량별 경로 상세 정보를 확인합니다.
+   - **Output JSON**: 원본 응답 JSON을 확인하고 Excel로 내보낼 수 있습니다.
 5. **Map Matching** (선택): 상단 탭을 "Map Matching"으로 전환하면 GPS 궤적 보정 기능을 사용할 수 있습니다.
 
 ---
 
-## 🛠️ 개발 가이드
+## 개발 가이드
 
 ### 코드 품질 도구
 
@@ -215,7 +232,7 @@ cd frontend && npm run build
 
 ---
 
-## 📦 기술 스택
+## 기술 스택
 
 ### 백엔드
 - **Python 3.x** + **FastAPI** (비동기 웹 프레임워크)
@@ -231,4 +248,4 @@ cd frontend && npm run build
 
 ### 인프라
 - **Docker** + **Docker Compose**
-- **VROOM** (외부 경로 최적화 엔진, Docker 이미지)
+- **VROOM Wrapper v3.0** (OSRM, VROOM 바이너리, Redis를 포함하는 외부 프로젝트)

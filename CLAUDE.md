@@ -1,128 +1,145 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code when working with code in this repository.
 
 ## Project Overview
 
-RoutePlayground is a full-stack application for vehicle routing optimization (VRP). It provides an interactive web interface with Leaflet maps for visualizing routing solutions from multiple engines (VROOM, OR-Tools, and more).
+RoutePlayground is a full-stack vehicle routing optimization (VRP) platform. It provides an interactive web UI with Leaflet maps for visualizing routing solutions from multiple engines (VROOM via wrapper, OR-Tools). The backend connects to **VROOM Wrapper v3.0** -- not a standalone VROOM instance -- for all remote routing and map matching operations.
+
+## Architecture
+
+```
+Frontend (React/TS :3030)
+    |
+    v
+Backend (FastAPI :8080)  --[routing-net]--> VROOM Wrapper v3.0 (:8000)
+    |                                           |-- /distribute
+    |                                           |-- /optimize, /optimize/basic, /optimize/premium
+    |                                           |-- /map-matching/match
+    v
+OR-Tools (embedded Python library, no external service)
+```
 
 ## Development Commands
 
-### Backend Development
+### Backend
 ```bash
-# Install dependencies
 pip install -r requirements.txt
-
-# Run development server
-python main.py
-
-# Run tests
-pytest
-
-# Lint and format
-ruff check src/
-black src/
+python main.py                # Starts FastAPI on :8080
+pytest tests/                 # Run tests
+ruff check src/ && black src/ # Lint and format
 ```
 
-### Frontend Development
+### Frontend
 ```bash
 cd frontend
-
-# Install dependencies  
 npm install
-
-# Run development server (http://localhost:3030)
-npm start
-
-# Build for production
-npm run build
-
-# Run tests
-npm test
+npm start          # Dev server on http://localhost:3030
+npm run build      # Production build
+npm test           # React Testing Library
 ```
 
-### Docker Development
+### Docker
 ```bash
-# Start all services (frontend + backend + VROOM)
-docker-compose up
-
-# Start specific service
-docker-compose up backend
-docker-compose up frontend
+docker-compose up -d            # Start backend + frontend
+docker-compose up -d --build    # Rebuild and start
+docker-compose logs -f          # Follow logs
 ```
 
-## Project Architecture
+Docker networking: the backend joins the `routing-net` external Docker network to reach `vroom-wrapper-v3:8000`. The frontend only joins `playground-net` (internal bridge).
 
-### Backend (`src/`)
-- **FastAPI Application**: Async web framework with automatic API documentation
-- **Routing Engines**: Abstract base class with VROOM and OR-Tools implementations
-- **Models**: Pydantic models for request/response validation
-- **API Routes**: RESTful endpoints for routing operations
-- **Config** (`src/utils/config.py`): Server URLs and settings via environment variables
+## Server Configuration (Two Config Sources)
 
-### Frontend (`frontend/src/`)
-- **React + TypeScript**: Component-based UI with type safety
-- **Leaflet Integration**: Interactive maps via react-leaflet
-- **Server Config** (`frontend/src/config/servers.json`): Single source of truth for all engine server definitions — add/remove servers by editing this JSON file only
-- **State Management**: React hooks for application state
-- **API Integration**: Axios client with direct and proxied server support
+There are two independent server registries. Both must stay in sync when adding or removing engines.
 
-### Key Files
-- `src/api/routes.py`: FastAPI application and API endpoints (config-driven server dispatch)
-- `src/utils/config.py`: Environment-variable-based settings (server URLs, ports, etc.)
-- `src/engines/base.py`: Abstract routing engine interface
-- `src/engines/vroom_client.py`: VROOM API integration
-- `src/engines/ortools_client.py`: OR-Tools solver integration
-- `src/services/job_manager.py`: Async job processing (config-driven)
-- `frontend/src/config/servers.json`: **Server registry** — edit this to add/modify engine endpoints
-- `frontend/src/utils/serverHelpers.ts`: Data-driven server URL resolution (reads from servers.json)
-- `frontend/src/components/MapComponent.tsx`: Leaflet map + route visualization
-- `frontend/src/components/JsonPanel.tsx`: JSON input/output panel
-- `frontend/src/components/RouteList.tsx`: Route details and vehicle summary
+### 1. Frontend -- `frontend/src/config/servers.json`
 
-## Server Configuration
+Drives the server dropdown rendered in the browser. Each entry has a `type` field:
+- `"proxy"` -- request goes through the backend (`/solve/{server}`)
+- `"direct"` -- frontend calls the URL directly (bypasses backend)
 
-### Adding a new engine server (Frontend - Direct)
-Edit `frontend/src/config/servers.json`:
-```json
-{
-  "name": "my-engine",
-  "description": "My Engine (8090)",
-  "url": "http://host:8090/distribute",
-  "type": "direct"
-}
-```
+Currently 5 servers: `vroom-distribute`, `vroom-optimize`, `vroom-optimize-basic`, `vroom-optimize-premium`, `ortools-local`. All are type `"proxy"`.
 
-### Overriding backend server URLs (Environment Variables)
-Create a `.env` file in the project root:
-```env
-ROOUTY_URL=https://custom-server.com/distribute
-VROOM_LOCAL_URL=http://my-vroom:3000/
-MAP_MATCHING_URL=http://matcher:8100/map-matching/match
-API_HOST=0.0.0.0
-API_PORT=8080
-```
+### 2. Backend -- `src/utils/config.py`
 
-## Routing Engine Integration
+`Settings` class (pydantic_settings) with a `server_registry` property that builds a dict of server name to `{url, description, api_key?}`. URLs are derived from env vars.
 
-### VROOM
-- External HTTP service (Docker image: `ghcr.io/vroom-project/vroom-docker`)
-- Requires OSRM backend for road-based routing
-- Returns encoded polyline geometry for route visualization
+Key environment variables (with defaults):
+| Variable | Default | Purpose |
+|---|---|---|
+| `WRAPPER_BASE_URL` | `http://vroom-wrapper-v3:8000` | Base URL for all wrapper endpoints |
+| `WRAPPER_API_KEY` | `demo-key-12345` | API key auto-injected for `/optimize*` endpoints |
+| `MAP_MATCHING_URL` | `http://vroom-wrapper-v3:8000/map-matching/match` | Map matching service URL |
+| `API_HOST` | `0.0.0.0` | Backend listen address |
+| `API_PORT` | `8080` | Backend listen port |
 
-### OR-Tools
-- Integrated Python library (no external dependencies)
-- Google's constraint programming solver
-- Fallback option when VROOM is unavailable
+The API key (`demo-key-12345`) is sent as `X-API-Key` header. It is auto-injected by the backend for any server config that has an `api_key` field (the three `/optimize*` servers).
+
+## API Endpoints (`src/api/routes.py`)
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/` | Health check / version info |
+| POST | `/solve/{server}` | Proxy routing request to the named server. Supports `?timeout=` and `?async=true` query params. |
+| GET | `/servers` | Returns all servers from `settings.server_registry` |
+| GET | `/job/{job_id}` | Poll async job status (pending/processing/completed/failed) |
+| POST | `/map-matching/match` | Proxy GPS trajectory to the wrapper's map matching endpoint |
+
+The `/solve/{server}` endpoint looks up `server` in `settings.server_registry`. If the URL is `"embedded"`, it runs OR-Tools locally. Otherwise it forwards the request via httpx, auto-injecting `X-API-Key` and `options.g = true` (geometry).
+
+## Map Matching
+
+Map matching is a core feature. The flow:
+1. User enters GPS trajectory in `MapMatchingPanel.tsx` (format: `[[lon, lat, timestamp, accuracy, speed], ...]`)
+2. The panel can call the wrapper directly (frontend `matchTrajectory` in `api.ts`) or go through the backend proxy (`POST /map-matching/match`)
+3. Backend proxies to `settings.map_matching_url` (wrapper's `/map-matching/match`)
+4. Response contains `matched_trace` (list of MapMatchingPoint with lon/lat/timestamp/flag) and `summary` (confidence, shape_preservation_score)
+
+Models: `src/models/map_matching.py` -- `MapMatchingRequest`, `MapMatchingResponse`, `MapMatchingPoint`, `MapMatchingSummary`.
+
+## Async Job Processing (`src/services/job_manager.py`)
+
+When `?async=true` is passed to `/solve/{server}`:
+1. `JobManager.create_job()` returns a `JobResponse` with a job ID immediately
+2. `process_job()` runs in a FastAPI `BackgroundTasks` coroutine
+3. Frontend polls `GET /job/{job_id}` at 1-second intervals until completed/failed
+4. Jobs are stored in-memory (dict keyed by job ID); they do not survive restarts
+
+The frontend also supports client-side async for `direct` type servers (job IDs prefixed `frontend-`).
+
+## Key Files
+
+### Backend
+- `main.py` -- Uvicorn entrypoint
+- `src/api/routes.py` -- All API endpoints, request proxying, API key injection
+- `src/utils/config.py` -- `Settings` class with `server_registry` property, env var configuration
+- `src/services/job_manager.py` -- In-memory async job manager with wrapper polling
+- `src/models/map_matching.py` -- MapMatchingRequest / MapMatchingResponse / MapMatchingPoint / MapMatchingSummary
+- `src/models/request.py` -- RoutingRequest model
+- `src/models/response.py` -- RoutingResponse model
+- `src/models/job.py` -- AsyncJob / JobResponse / JobStatus models
+- `src/engines/ortools_client.py` -- OR-Tools embedded solver
+- `src/engines/base.py` -- Abstract routing engine interface
+
+### Frontend
+- `frontend/src/config/servers.json` -- Server dropdown definitions (5 servers, all proxy type)
+- `frontend/src/services/api.ts` -- HTTP client: `solveRouting`, `getJobStatus`, `pollJobUntilComplete`, `matchTrajectory`
+- `frontend/src/utils/serverHelpers.ts` -- `isDirectServer`, `getServerUrl`, `getAllServers` (reads from servers.json)
+- `frontend/src/components/MapMatchingPanel.tsx` -- Map matching UI tab with server selector and result display
+- `frontend/src/components/panels/InputPanel.tsx` -- Routing input controls (server dropdown, timeout, async toggle, JSON/spreadsheet editor)
+- `frontend/src/components/MapComponent.tsx` -- Leaflet map and route visualization
+
+### Infrastructure
+- `docker-compose.yml` -- backend (:8080) + frontend (:3030), `routing-net` external network for wrapper access
+- `Dockerfile.backend` -- Backend container image
+- `frontend/Dockerfile` -- Frontend container image
 
 ## Testing
 
-Run backend tests with pytest:
 ```bash
+# Backend
 pytest tests/
-```
 
-Frontend uses React Testing Library:
-```bash
+# Frontend
 cd frontend && npm test
 ```
